@@ -7,6 +7,13 @@
   ((command :initarg :command :reader aic-command)
    (arguments :initarg :arguments :reader aic-arguments)))
 
+(define-condition cancel-interactive-command ()
+  ((reason :initarg :reason :reader cancel-reason))
+  (:report
+   (lambda (c s)
+     (format s "Command canceled: ~S"
+             (cancel-reason c)))))
+
 (define-condition no-applicable-command-implementation (cl-interactive-error)
   ((command :initarg :command :reader naci-command)
    (arguments :initarg :arguments :reader naci-arguments)

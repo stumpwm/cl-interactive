@@ -41,6 +41,7 @@
 
            #:cl-interactive-error
            #:abort-interactive-command
+           #:cancel-interactive-command
            #:no-applicable-command-implementation
            #:not-a-command-error
            #:missing-required-arguments-error
@@ -55,6 +56,7 @@
   (:import-from #:cl-interactive
                 #:cl-interactive-error
                 #:abort-interactive-command
+                #:cancel-interactive-command
                 #:no-applicable-command-implementation
                 #:not-a-command-error
                 #:missing-required-arguments-error
