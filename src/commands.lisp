@@ -16,13 +16,47 @@
   (:metaclass c2mop:funcallable-standard-class)
   (:documentation "The command class. A subclass of generic functions."))
 
+(defstruct (arg-type
+            (:constructor make-arg-type (name doc fn)))
+  "Data for converting an argument to its desired type"
+  (name nil :type symbol :read-only t)
+  (doc nil :type (or string null))
+  (fn nil :type (function (t) t)))
+
+(defvar *arg-types* (make-hash-table))
+
+(defmacro define-arg-type (name (param-name) &body body)
+  "Define or update a conversion function with name NAME that
+converts an interactive argument to a specific type"
+  (check-type name symbol "Arg types must be a symbol")
+  (multiple-value-bind (values declarations doc)
+      (alexandria:parse-body body :documentation t)
+    (let ((already-existing (gensym "already-existing"))
+          (lambda-symb (gensym "lambda-fn"))
+          (gethash-form `(gethash ,name *arg-types*))
+          (lambda-form `(lambda (,param-name)
+                          ,@(when declarations
+                              declarations)
+                          ,@values)))
+      `(let ((,already-existing ,gethash-form)
+             (,lambda-symb ,lambda-form))
+         (if ,already-existing
+             (progn
+               (setf (arg-type-doc ,already-existing) ,doc
+                     (arg-type-fn ,already-existing) ,lambda-symb)
+               ,already-existing)
+             (setf ,gethash-form (make-arg-type ,name ,doc
+                                                ,lambda-symb)))))))
+
 (defstruct (interactive-spec (:constructor make-interactive-spec
-                                 (type symb arg)))
+                                 (type symb data converter)))
   (type nil :type (member :default :function :class)
             :read-only t)
   (symb nil :type (or symbol function)
             :read-only t)
-  (arg nil :read-only t))
+  (data nil :read-only t)
+  (converter nil :type (or arg-type null)
+                          :read-only t))
 
 (defmethod no-applicable-method ((gf command) &rest args)
   (error 'no-applicable-command-implementation
@@ -40,31 +74,6 @@ COMMAND - the command object
 ARGUMENT - a symbol naming the argument as it appears in DEFINE-COMMAND
 INPUT-METHOD - the input method to use
 INTERACTIVE - the interactive portion of the command argument"))
-
-(defgeneric compute-interactive-component-value (command
-                                                 argument
-                                                 interactive-component
-                                                 compute-value-from
-                                                 &key &allow-other-keys)
-  (:documentation
-   "After reading an interactive component compute its resultant value, likely
-from a string. A method for this generic specializing interactive-component as a
-function is predefined, and returns COMPUTE-VALUE-FROM unmodified.
-
-COMMAND will always be the command object
-
-ARGUMENT will always be the symbol naming the argument as it appears in
-DEFINE-COMMAND
-
-INTERACTIVE-COMPONENT should specialize on the class of the interactive
-component
-
-COMPUTE-VALUE-FROM should specialize on the value returned by reading the
-interactive argument using an input method. This will likely be a string, but
-may be any object.")
-  (:method ((command command) (argument symbol) (interactive-component function)
-            compute-value-from &key &allow-other-keys)
-    compute-value-from))
 
 (defmacro with-gathered-args (arg-spec name &body body)
   "Place the given arguments and their names into a data structure suitable for
@@ -115,32 +124,30 @@ interactive argument list and obtains each argument using that list."
                      :given gathered-symbols)))
           (flet ((get-the-argument (arg spec)
                    (declare (type interactive-spec spec))
-                   (with-accessors ((it interactive-spec-type)
-                                    (is interactive-spec-symb)
-                                    (ia interactive-spec-arg))
-                       spec
-                     (let* ((inst
-                              (ecase it
-                                ((:default) (if (find-class is)
-                                                (apply #'make-instance is ia)
-                                                (etypecase is
-                                                  (function is)
-                                                  (symbol (symbol-function is)))))
-                                ((:class) (apply #'make-instance is ia))
-                                ((:function) (etypecase is
-                                               (function is)
-                                               (symbol (symbol-function is))))))
-                            (pre-value
-                              (if (typep inst 'interactive-component)
-                                  (read-argument-interactively command
-                                                               arg
-                                                               input-method
-                                                               inst)
-                                  (apply inst command input-method arg ia))))
-                       (compute-interactive-component-value command
-                                                            arg
-                                                            inst
-                                                            pre-value)))))
+                   (let* ((it (interactive-spec-type spec))
+                          (is (interactive-spec-symb spec))
+                          (ia (interactive-spec-data spec))
+                          (inst
+                            (ecase it
+                              ((:default) (if (find-class is)
+                                              (apply #'make-instance is ia)
+                                              (etypecase is
+                                                (function is)
+                                                (symbol (symbol-function is)))))
+                              ((:class) (apply #'make-instance is ia))
+                              ((:function) (etypecase is
+                                             (function is)
+                                             (symbol (symbol-function is))))))
+                          (pre-value
+                            (if (typep inst 'interactive-component)
+                                (read-argument-interactively command
+                                                             arg
+                                                             input-method
+                                                             inst)
+                                (apply inst command input-method arg ia))))
+                     (if (interactive-spec-converter spec)
+                         (funcall (interactive-spec-converter spec) pre-value)
+                         pre-value))))
             (let* ((to-gather (set-difference (interactive-components command)
                                               already-gathered :key #'car))
                    (argument-list
@@ -294,7 +301,7 @@ symbol, and interactive arguments as multiple values. For &KEY arguments only."
                   :type :key
                   :argument argument))))
 
-(defun %process-interactive-spec (interactive-type interactive-symb arg)
+(defun %process-interactive-spec (interactive-type interactive-symb details)
   (let ((valid-type '(:default :class :function)))
     (unless (member interactive-type valid-type)
       (error "Invalid interactive component ~S.~%Interactive type must be one of ~S, not ~S"
@@ -305,20 +312,28 @@ symbol, and interactive arguments as multiple values. For &KEY arguments only."
              (consp interactive-symb)
              (eql 'function (car interactive-symb)))
     (setf interactive-symb (symbol-function (second interactive-symb))))
-  ;; As an alternative to emitting a constructor call, we could
-  ;; impelment MAKE-LOAD-FORM on INTERACTIVE-SPEC, but that
-  ;; seems a bit sketchy. It would enable us to move
-  ;; some validation higher up in the callstack for this macro,
-  ;; but it's not needed right now. We could also leave it alone
-  ;; (including the function transformation) until further on,
-  ;; but again, we don't do any processing of this data past
-  ;; this point.
-  `(make-interactive-spec
-    ,interactive-type
-    ,(if (functionp interactive-symb)
-         `(function interactive-symb)
-         `(quote ,interactive-symb))
-    (list ,@arg)))
+  (destructuring-bind (&key data type) details
+    ;; As an alternative to emitting a constructor call, we could
+    ;; impelment MAKE-LOAD-FORM on INTERACTIVE-SPEC, but that
+    ;; seems a bit sketchy. It would enable us to move
+    ;; some validation higher up in the callstack for this macro,
+    ;; but it's not needed right now. We could also leave it alone
+    ;; (including the function transformation) until further on,
+    ;; but again, we don't do any processing of this data past
+    ;; this point.
+    `(make-interactive-spec
+      ,interactive-type
+      ,(if (functionp interactive-symb)
+           `(function ,interactive-symb)
+           `(quote ,interactive-symb))
+      ,(cond
+         ((null data) nil)
+         ((listp data)
+          `(list ,@data))
+         (t
+          `(list ,data)))
+      ,(when type
+         `(gethash ,type *arg-types*)))))
 
 (defun parse-interactive-component (component)
   "Return the interactive-spec from the given interactive component."

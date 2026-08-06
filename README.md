@@ -160,11 +160,11 @@ NON-INTERACTIVE : arg-name
 ;; either by a function or a class:
 INTERACTIVE-ARG : (arg-name FUNCTION-GATHERER | CLASS-GATHERER | DEFAULT-GATHERER)
 
-FUNCTION-GATHERER : (:function func-name arg)
+FUNCTION-GATHERER : (:function func-name &key data type)
 
-CLASS-GATHERER : (:class class-designator arg)
+CLASS-GATHERER : (:class class-designator &key data type)
 
-DEFAULT-GATHERER : (:default designator args)
+DEFAULT-GATHERER : (:default designator &key data type)
 ```
 
 You can supply the values for non-interative arguments by passing a datastructure

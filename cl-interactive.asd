@@ -1,6 +1,6 @@
 
 (asdf:defsystem #:cl-interactive
-  :depends-on (#:closer-mop)
+  :depends-on (#:closer-mop #:alexandria)
   :serial t
   :in-order-to ((test-op (test-op cl-interactive/test)))
   :components ((:module #:src
