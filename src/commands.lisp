@@ -104,11 +104,7 @@ interactive argument list and obtains each argument using that list."
             (error 'not-a-command-error :command command))
           (let ((gathered-symbols (mapcar #'car already-gathered))
                 (non-interactive (non-interactive-args command)))
-            (format t "~&Check: ~S vs ~S~% ~S~%"
-                    gathered-symbols
-                    non-interactive
-                    (set-difference non-interactive
-                                    gathered-symbols))
+
             (finish-output)
             (when (set-difference non-interactive
                                   gathered-symbols)
