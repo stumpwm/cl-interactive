@@ -12,8 +12,10 @@
            #:input-method
            #:prepare-completions-for-input-method
            #:completing-read
+           #:completing-read-sequence
            #:read-string
            #:input-method-read
+           #:input-method-read-index
            #:with-input-method-error-handling
 
            #:command
@@ -99,8 +101,10 @@
                 #:input-method
                 #:prepare-completions-for-input-method
                 #:completing-read
+                #:completing-read-sequence
                 #:read-string
                 #:input-method-read
+                #:input-method-read-index
                 #:with-input-method-error-handling
                 #:interactive-error-handler-for-input-method
                 #:cl-interactive-error

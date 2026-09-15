@@ -137,6 +137,17 @@ resulting completions and other keys."
     (remf keys :completions)
     (apply #'input-method-read input-method prompt :completions comp keys)))
 
+(defgeneric input-method-read-index (input-method sequence prompt
+                                     &key select-multiple &allow-other-keys)
+  (:documentation "Read something from an input method from the given sequence
+and return that item's index. Can return NIL if nothing was selected."))
+
+(defun completing-read-sequence (input-method sequence prompt &key select-multiple)
+  (let ((index (input-method-read-index input-method sequence prompt
+                                        :select-multiple select-multiple)))
+    (when index
+      (elt sequence index))))
+
 (defun read-string (input-method prompt &rest keys &key initial-input history)
   "Read a string from the user. Like COMPLETING-READ but only accepts the keys
 INITIAL-INPUT and HISTORY."
